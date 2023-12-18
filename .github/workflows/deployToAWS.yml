@@ -1,6 +1,25 @@
 name: "Publish to SNS Topic: Triggers Deployment to AWS"
 
 on:
+  workflow_call:
+    inputs:
+      DEPLOYMENT_ENVIRONMENT:
+        description: 'Environment'
+        type: string
+        required: true
+      targetCommitRef:
+        description: 'Commit ref to deploy'
+        type: string
+        default: 'main'
+    secrets:
+      AWS_REGION:
+        required: true
+      AWS_TOPIC_ARN:
+        required: true
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
   workflow_dispatch:
     inputs:
       DEPLOYMENT_ENVIRONMENT:
@@ -10,6 +29,9 @@ on:
         - demo
         - development
         required: true
+      targetCommitRef:
+        description: 'Commit ref to deploy'
+        default: 'main'
 
 jobs:
   setup:
@@ -33,4 +55,5 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           DEPLOYMENT_ENVIRONMENT: ${{ inputs.DEPLOYMENT_ENVIRONMENT }}
+          TARGET_COMMIT_REF: ${{ inputs.targetCommitRef }}
         run: python tools/aws_sns_publish_topic.py

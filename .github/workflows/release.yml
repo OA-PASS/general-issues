@@ -1,118 +1,74 @@
-name: "Publish: manual full release OR automatic snapshot"
+name: "Publish: Manual Full Release All Eclipse-PASS Projects"
 
 on:
   workflow_dispatch:
     inputs:
       releaseversion:
-        description: 'Release version'
+        description: 'Release version (e.g. 0.1.0)'
         required: true
       nextversion:
-        description: 'Next dev version'
+        description: 'Next dev version (e.g. 0.2.0-SNAPSHOT)'
         required: true
-  push:
-    branches:
-      - 'main'
+      runtests:
+        description: 'Run acceptance tests against release version before pushing images?'
+        type: boolean
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  setup:
-    runs-on: ubuntu-latest
-    outputs:
-      # Output project version from the POM to conditionally run dependent steps
-      project-version: ${{ steps.project_version.outputs.version }}
-    steps:
-      - name: Checkout latest code
-        uses: actions/checkout@v3
+  run-java-release:
+    uses: ./.github/workflows/pass-java-release.yml # Should version these workflows
+    with:
+      releaseversion: ${{ inputs.releaseversion }}
+      nextversion: ${{ inputs.nextversion }}
+    secrets:
+      MAVEN_GPG_KEY: ${{ secrets.MAVEN_GPG_KEY }}
+      MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+      OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+      OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
 
-      - name: Setup Java & Maven
-        uses: actions/setup-java@v3
-        with:
-          java-version: 17
-          distribution: 'temurin'
-          cache: 'maven'
-      
-      - name: Get project version from POM
-        id: project_version
-        run: echo "VERSION=`mvn help:evaluate -Dexpression=project.version -q -DforceStdout`" >> $GITHUB_OUTPUT
+  run-pass-ui-release:
+    uses: eclipse-pass/pass-ui/.github/workflows/release.yml@main
+    with:
+      releaseversion: ${{ inputs.releaseversion }}
+      nextversion: ${{ inputs.nextversion }}
 
-  # Run only if project POM has version ending in "-SNAPSHOT"
-  snapshot:
-    needs: setup
-    if: github.event_name == 'push' && endsWith(needs.setup.outputs.project-version, '-SNAPSHOT')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout latest code
-        uses: actions/checkout@v3
+  run-pass-auth-release:
+    uses: eclipse-pass/pass-auth/.github/workflows/release.yml@main
+    with:
+      releaseversion: ${{ inputs.releaseversion }}
+      nextversion: ${{ inputs.nextversion }}
 
-      - name: Setup Java & Maven
-        uses: actions/setup-java@v3
-        with:
-          java-version: 17
-          distribution: 'temurin'
-          cache: 'maven'
-          server-id: ossrh
-          server-username: MAVEN_USERNAME
-          server-password: MAVEN_PASSWORD
-          gpg-private-key: ${{ secrets.MAVEN_GPG_KEY }}
-          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+  run-pass-acceptance-testing-release:
+    uses: eclipse-pass/pass-acceptance-testing/.github/workflows/release.yml@main
+    with:
+      releaseversion: ${{ inputs.releaseversion }}
+      nextversion: ${{ inputs.nextversion }}
 
-      - name: Publish SNAPSHOT
-        run: mvn -B --no-transfer-progress clean deploy
-        env:
-          MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
-          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+  run-pass-docker-release:
+    needs: 
+      - 'run-java-release'
+      - 'run-pass-ui-release'
+      - 'run-pass-auth-release'
+      - 'run-pass-acceptance-testing-release'
+    uses: eclipse-pass/pass-docker/.github/workflows/release.yml@main
+    with:
+      releaseversion: ${{ inputs.releaseversion }}
+      nextversion: ${{ inputs.nextversion }}
+      runtests: ${{ inputs.runtests }}
 
-  # Run for manual trigger (workflow dispatch), since you'll have release and next dev versions specified
-  # All commits will have a -SNAPSHOT project version anyway, since the releases will be handled here
-  release:
-    needs: setup
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    env:
-      RELEASE: ${{ inputs.releaseversion }}
-      NEXT: ${{ inputs.nextversion }}
-    steps:
-      - name: Checkout latest code
-        uses: actions/checkout@v3
-
-      - name: Config git user
-        run: |
-          git config user.name ${{ github.actor }}
-          git config user.email "${{ github.actor }}@users.noreply.github.com"
-
-      - name: Setup Java & Maven
-        uses: actions/setup-java@v3
-        with:
-          java-version: 17
-          distribution: 'temurin'
-          cache: 'maven'
-          server-id: ossrh
-          server-username: MAVEN_USERNAME
-          server-password: MAVEN_PASSWORD
-          gpg-private-key: ${{ secrets.MAVEN_GPG_KEY }}
-          gpg-passphrase: MAVEN_GPG_PASSPHRASE
-      # =============================================================================
-      # Start the release
-      # =============================================================================
-      - name: Release main POM
-        run: |
-          mvn -B -U -V -ntp release:prepare -DreleaseVersion=$RELEASE -Dtag=$RELEASE -DdevelopmentVersion=$NEXT -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn
-          mvn -B -U -V -ntp release:perform -P release -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn
-        env:
-          MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
-          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
-
-      - name: Build and publish new dev version
-        run: mvn -B -U -V -ntp deploy -P release
-        env:
-          MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
-          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
-
-      - name: Push release plugin commits
-        if: github.ref_type == 'branch' && github.ref_protected == false
-        run: git push origin ${{ github.ref_name }}
-
-      - name: Push new release tag GH
-        run: git push origin --tags
+  run-deploy-release-to-aws-demo:
+    needs: 
+      - 'run-pass-docker-release'
+    uses: ./.github/workflows/deployToAWS.yml
+    with:
+      DEPLOYMENT_ENVIRONMENT: demo
+      targetCommitRef: ${{ inputs.releaseversion }}
+    secrets:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_TOPIC_ARN: ${{ secrets.AWS_TOPIC_ARN }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

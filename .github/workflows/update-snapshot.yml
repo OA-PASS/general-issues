@@ -1,0 +1,55 @@
+name: "Publish: automatic snapshot"
+
+on:
+  push:
+    branches:
+      - 'main'
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      # Output project version from the POM to conditionally run dependent steps
+      project-version: ${{ steps.project_version.outputs.version }}
+    steps:
+      - name: Checkout latest code
+        uses: actions/checkout@v3
+
+      - name: Setup Java & Maven
+        uses: actions/setup-java@v3
+        with:
+          java-version: 17
+          distribution: 'temurin'
+          cache: 'maven'
+      
+      - name: Get project version from POM
+        id: project_version
+        run: echo "VERSION=`mvn help:evaluate -Dexpression=project.version -q -DforceStdout`" >> $GITHUB_OUTPUT
+
+  # Run only if project POM has version ending in "-SNAPSHOT"
+  update-snapshot:
+    needs: setup
+    if: github.event_name == 'push' && endsWith(needs.setup.outputs.project-version, '-SNAPSHOT')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout latest code
+        uses: actions/checkout@v3
+
+      - name: Setup Java & Maven
+        uses: actions/setup-java@v3
+        with:
+          java-version: 17
+          distribution: 'temurin'
+          cache: 'maven'
+          server-id: ossrh
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+          gpg-private-key: ${{ secrets.MAVEN_GPG_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Publish SNAPSHOT
+        run: mvn -B --no-transfer-progress clean deploy
+        env:
+          MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}

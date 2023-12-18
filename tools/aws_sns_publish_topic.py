@@ -7,8 +7,9 @@ SECRET_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
 TOPIC_ARN = os.getenv('AWS_TOPIC_ARN')
 DEPLOYMENT_ENVIRONMENT = os.getenv('DEPLOYMENT_ENVIRONMENT')
 REGION=os.getenv('AWS_REGION')
+COMMIT_REF = os.getenv('TARGET_COMMIT_REF')
 
-MESSAGE = {"action": "DeployStart", "commitRef": "main", "deployEnv": DEPLOYMENT_ENVIRONMENT}
+MESSAGE = {"action": "DeployStart", "commitRef": COMMIT_REF, "deployEnv": DEPLOYMENT_ENVIRONMENT}
 
 client = boto3.client('sns',
     region_name=REGION,
