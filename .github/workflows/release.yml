@@ -9,9 +9,6 @@ on:
       nextversion:
         description: 'Next dev version'
         required: true
-  push:
-    branches:
-      - 'main'
 
 jobs:
   setup:
@@ -29,43 +26,43 @@ jobs:
           java-version: 17
           distribution: 'temurin'
           cache: 'maven'
-      
+
       - name: Get project version from POM
         id: project_version
         run: echo "VERSION=`mvn help:evaluate -Dexpression=project.version -q -DforceStdout`" >> $GITHUB_OUTPUT
 
-  # Run only if project POM has version ending in "-SNAPSHOT"
-  snapshot:
-    needs: setup
-    if: github.event_name == 'push' && endsWith(needs.setup.outputs.project-version, '-SNAPSHOT')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout latest code
-        uses: actions/checkout@v3
-
-      - name: Setup Java & Maven
-        uses: actions/setup-java@v3
-        with:
-          java-version: 17
-          distribution: 'temurin'
-          cache: 'maven'
-          server-id: ossrh
-          server-username: MAVEN_USERNAME
-          server-password: MAVEN_PASSWORD
-          gpg-private-key: ${{ secrets.MAVEN_GPG_KEY }}
-          gpg-passphrase: MAVEN_GPG_PASSPHRASE
-
-      - name: Publish SNAPSHOT
-        run: mvn -B --no-transfer-progress clean deploy
+  check_vars:
+     needs: setup
+     runs-on: ubuntu-latest
+     steps:
+      - name: Show OSSRH_USERNAME
+        run: |
+          echo "Using OSSRH_USERNAME ${{ secrets.OSSRH_USERNAME }}"
+      - name: Check if OSSRH_PASSWORD is available
+        run: |
+          if [[ -z "${{ secrets.OSSRH_PASSWORD }}" ]]; then
+            echo "OSSRH_PASSWORD is not available!"
+          else
+            echo "OSSRH_PASSWORD is available."
+          fi
+      - name: Check if MAVEN_GPG_PASSPHRASE is available
+        run: |
+          if [[ -z "$MAVEN_GPG_PASSPHRASE" ]]; then
+            echo "MAVEN_GPG_PASSPHRASE is not available!"
+          else
+            echo "MAVEN_GPG_PASSPHRASE is available."
+          fi
         env:
-          MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+      # - name: Sign with our MAVEN_GPG_PASSPHRASE as an env variable
+      #   run: |
+      #     echo "1234" | gpg --no-use-agent -o /dev/null --local-user $MAVEN_GPG_PASSPHRASE -as -
+      #     echo "The correct passphrase was entered for this key"
+      #   env:
+      #     MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
 
-  # Run for manual trigger (workflow dispatch), since you'll have release and next dev versions specified
-  # All commits will have a -SNAPSHOT project version anyway, since the releases will be handled here
   release:
-    needs: setup
+    needs: check_vars
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
@@ -96,8 +93,8 @@ jobs:
       # =============================================================================
       - name: Release main POM
         run: |
-          mvn -B -U -V -ntp release:prepare -DreleaseVersion=$RELEASE -Dtag=$RELEASE -DdevelopmentVersion=$NEXT -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn
-          mvn -B -U -V -ntp release:perform -P release -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn
+          mvn -B -U -V -ntp release:prepare -DreleaseVersion=$RELEASE -Dtag=$RELEASE -DdevelopmentVersion=$NEXT
+          mvn -B -U -V -ntp release:perform -P release
         env:
           MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
@@ -109,10 +106,3 @@ jobs:
           MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
-
-      - name: Push release plugin commits
-        if: github.ref_type == 'branch' && github.ref_protected == false
-        run: git push origin ${{ github.ref_name }}
-
-      - name: Push new release tag GH
-        run: git push origin --tags
