@@ -25,46 +25,15 @@ The base entry for jsonnett configs is via
 local orgs = import 'otterdog-defaults.libsonnet';
 ```
 
-### Bitwarden Configs
+## Managing Passwords
 
-To integrate [bitwarden into otterdog configs](https://gitlab.eclipse.org/eclipsefdn/security/otterdog#bitwarden)
-the request is to add an _"organization"_ directly to the JSON, but instead lets use the jsonnett based
-on the outputs from the [otterdog playground](http://eclipse-pass.org/.eclipsefdn/playground/).
+If you are adding new secrets, then please ensure you
+[securely share those secrets with Eclipse Foundation operations team](/docs/infra/sharing_secrets.md)
 
-```javascript
-orgs.newOrg('eclipse-pass') {
-  credentials+: [{
-      "provider": "bitwarden",
-      "item_id" : "23801ca4-fd27-446c-b5af-b07b0108f443"
-    },
-  ],
-}
-```
-
-And then we can specify secrets based on the structure of `bitwarden:<item_id>@<field_name>`.
-
-### Organizational Secrets
-
-Here is documentation on managing [organization secrets](https://otterdog.readthedocs.io/en/latest/reference/organization/secret/)
-
-```javascript
-orgs.newOrg('eclipse-pass') {
-  secrets+: [
-    orgs.newOrgSecret('HELLO_WORLD_QUEST') {
-      value: "bitwarden:23801ca4-fd27-446c-b5af-b07b0108f443@quest",
-    },
-    orgs.newOrgSecret('HELLO_WORLD_COLOR') {
-      value: "bitwarden:23801ca4-fd27-446c-b5af-b07b0108f443@color",
-    },
-  ],
-}
-```
-
-Please refer to [bitwarden for specifics on password management](/docs/infra/bitwarden.md)
 
 ## Playground (Online Editor)
 
-From the [monitoring application]((https://eclipse-pass.org/.eclipsefdn/)) you can access a [otterdog playground](http://eclipse-pass.org/.eclipsefdn/playground/)
+From the [monitoring application](https://eclipse-pass.org/.eclipsefdn/) you can access a [otterdog playground](http://eclipse-pass.org/.eclipsefdn/playground/)
 
 ![Otterdog Playground](/docs/assets/otterdog/playground.png)
 
